@@ -1,0 +1,10 @@
+<?php
+
+function oauth2_login_install() {
+  variable_set('oauth2_login_state', md5(rand()));
+}
+
+function oauth2_login_uninstall() {
+  variable_del('oauth2_login_state');
+  variable_del('oauth2_providers_info');
+}

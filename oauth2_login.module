@@ -1,0 +1,484 @@
+<?php
+
+/**
+ * This function should return an array containing the allowed providers.
+ * Each provider must have:
+ *  >name: the name that the user will see
+ *  >login-function: function that will be called when the user tries to login using the provider
+ *  >required-info: information to be filled at the configuration screen
+ * Also, there are some optional attributes:
+ *  >parse_response: function to parse data received from the provider (eg: convert XML to an array)
+ *  >configure-client: function called after the OAuth client creation, to configure specific parameters
+ */
+function get_oauth2_providers() {
+  $oauth2_required_info = array(
+  	'client-id' => array(
+  	  'name' => 'Client ID'
+    ),
+    'client-secret' => array(
+      'name' => 'Client Secret'
+    ),
+    'redirect-uri' => array(
+      'name' => 'Redirect URI'
+    ),
+    'client-id' => array(
+      'name' => 'Client ID'
+    ),
+    'auth-endpoint' => array(
+      'name' => 'Auth Endpoint'
+    ),
+    'token-endpoint' => array(
+      'name' => 'Token Endpoint'
+    ),
+    'fetch-url' => array(
+      'name' => 'Fetch URL'
+    ),
+    'scope' => array(
+      'name' => 'Scope'
+    )
+  );
+  
+  $yahoo_required_info = array(
+    'consumer-key' => array(
+      'name' => 'Consumer Key'
+    ),
+    'consumer-secret' => array(
+      'name' => 'Consumer Secret'
+    ),
+    'domain' => array(
+      'name' => 'Domain'
+    ),
+    'app-id' => array(
+      'name' => 'App ID'
+    ),
+    'callback-url' => array(
+      'name' => 'Callback URL'
+    )
+  );
+  
+  return array(
+    'google' => array(
+      'name' => 'Google',
+      'login-function' => 'oauth2_login',
+      'required-info' => $oauth2_required_info
+    ),
+    'facebook' => array(
+      'name' => 'Facebook',
+      'parse_response' => 'oauth2_facebook_parse_response',
+      'login-function' => 'oauth2_login',
+      'required-info' => $oauth2_required_info
+    ),
+    'linkedin' => array(
+      'name' => 'Linkedin',
+      'configure_client' => 'oauth2_linkedin_configure_client',
+      'parse_response' => 'oauth2_linkedin_parse_response',
+      'login-function' => 'oauth2_login',
+      'required-info' => $oauth2_required_info
+    ),
+    'yahoo' => array(
+      'name' => 'Yahoo',
+      'login-function' => 'yahoo_login',
+      'required-info' => $yahoo_required_info
+    )
+  );
+}
+
+function oauth2_login_menu() {
+  $providers = get_oauth2_providers();
+
+  foreach($providers as $id => $info) {
+    $items['user/login/' . $id] = array(
+      'title' => t('Login with ' . $info['name']),
+      'page callback' => 'oauth2_login_page',
+      'page arguments' => array(2),
+      'access callback' => 'user_is_anonymous',
+    );
+  }
+
+  $items['sistema/oauth2-login/config'] = array(
+    'title' => t('Configure OAuth2 Login'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('oauth2_login_config'),
+    'access callback' => 'user_access',
+    'access arguments' => array('config oauth2 login')
+  );
+
+  return $items;
+}
+
+/**
+ * Permission to configure this module.
+ */
+function oauth2_login_permission() {
+  return array(
+    'config oauth2 login' => array(
+      'title' => t('Configure OAuth2 Login'),
+    )
+  );
+}
+
+/**
+ * Builds the configuration form.
+ */
+function oauth2_login_config($form, &$form_state) {
+  //Get configuration information:
+  $providers_info = variable_get('oauth2_providers_info', array());
+
+  //State field:
+  $form['state'] = array(
+    '#type' => 'textfield',
+    '#title' => 'State',
+    '#description' => 'A long unique string value of your choice that is hard to guess. Used to prevent CSRF. Example: state=DCEEFWF45453sdffef424',
+    '#default_value' => variable_get('oauth2_login_state', ''),
+    '#required' => true,
+  );
+
+  $form['providers'] = array(
+    '#tree' => TRUE
+  );
+
+  //For each provider:
+  $providers = get_oauth2_providers();
+
+  foreach($providers as $id => $provider) {
+    //Fieldset to contain the other fields:
+    $form['providers'][$id] = array(
+      '#type' => 'fieldset',
+      '#title' => $provider['name']
+    );
+
+    //The enabled checkbox:
+    $form['providers'][$id]['enabled'] = array(
+      '#type' => 'checkbox',
+      '#title' => 'Enabled',
+      '#default_value' => isset($providers_info[$id]) && $providers_info[$id]['enabled'] == TRUE
+    );
+    
+    //For each required info:
+    foreach($provider['required-info'] as $info_id => $info) {
+      //Creates a field that is visible only when the provider is enabled:
+      $form['providers'][$id][$info_id] = array(
+        '#type' => 'textfield',
+        '#title' => t($info['name']),
+        '#default_value' => isset($providers_info[$id][$info_id]) ? $providers_info[$id][$info_id] : '',
+        '#states' => array(
+          'invisible' => array(
+            ':input[name="providers['.$id.'][enabled]"]' => array(
+              'checked' => FALSE
+            )
+          )
+        )
+      );
+    }
+  }
+
+  //The submit button:
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save')
+  );
+
+  return $form;
+}
+
+/**
+ * Saves the configuration form and rebuilds the menu.
+ */
+function oauth2_login_config_submit($form, &$form_state) {
+  variable_set('oauth2_login_state', $form_state['values']['state']);
+  variable_set('oauth2_providers_info', $form_state['values']['providers']);
+  drupal_set_message(t('OAuth2 providers saved!'));
+  menu_rebuild();
+}
+
+/**
+ * Alters the login form to add the links and the register form to fill information from the providers.
+ */
+function oauth2_login_form_alter(&$form, &$form_state, $form_id) {
+  //It's the login form, add the links to the menu:
+  if($form_id == 'user_login_block' || $form_id == 'user_login') {
+    $providers_info = variable_get('oauth2_providers_info');
+    $providers = get_oauth2_providers();
+
+    foreach($providers_info as $id => $info) {
+      if($info['enabled']) {
+        $form[$id] = array(
+          '#markup' => '<div id="oauth-'.$id.'"><a href="'.url('user/login/'.$id).'">'.t('Login with ').$providers[$id]['name'].'</a></div>'
+        );
+      }
+    }
+  }
+  //It's the registration form, fill information if it's available:
+  elseif($form_id == 'user_register_form') {
+    if(isset($form_state['build_info']['args'][0]['prepopulate'])) {
+      $form['field_full_name']['und'][0]['value']['#default_value'] = $form_state['build_info']['args'][0]['prepopulate']['name'];
+      $form['account']['mail']['#default_value'] = $form_state['build_info']['args'][0]['prepopulate']['mail'];
+      $form['account']['mail']['#attributes'] = array(
+        'class' => array('disabled'),
+        'readonly' => 'readonly',
+      );
+      $form['#validate'][] = 'user_register_mail_validate';
+      $form['#submit'] = array('user_register_using_provider');
+    }
+  }
+}
+
+/**
+ * Make sure that the user didn't change his email.
+ */
+function user_register_mail_validate($form, $form_state) {
+  if($form_state['values']['mail'] != $form_state['build_info']['args'][0]['prepopulate']['mail']) {
+    form_set_error('mail',t('Please, don\'t change your email.'));
+  }
+}
+
+/**
+ * Creates the user.
+ */
+function user_register_using_provider($form, $form_state) {
+  $user = entity_create('user', array());
+  $wrapper = entity_metadata_wrapper('user',$user);
+  $wrapper->name->set($form_state['values']['mail']);
+  $wrapper->field_full_name->set($form_state['values']['field_full_name']['und'][0]['value']);
+  $wrapper->mail->set($form_state['values']['mail']);
+  $wrapper->status->set(1);
+  $created_user = user_save($user);
+  $fst['uid'] = $created_user->uid;
+  user_login_submit(array(), $fst);
+  drupal_goto('user');
+}
+
+function user_register_form_set_session($form, $form_state) {
+  $_SESSION['oauth2_login'] = $form_state['build_info']['args'][0]['prepopulate'];
+}
+
+/**
+ * Handles user login using OAuth providers.
+ */
+function oauth2_login_page($provider_id) {
+  $service_info = variable_get('oauth2_providers_info');
+  
+  //If the service is enabled, call the function:
+  if(isset($service_info[$provider_id]) && $service_info[$provider_id]['enabled']) {
+    $providers = get_oauth2_providers();
+    $provider_info = $providers[$provider_id];
+    $provider_info['id'] = $provider_id;
+    $provider_info = array_merge($provider_info, $service_info[$provider_id]);
+    
+    return $providers[$provider_id]['login-function']($provider_info);
+  }
+  //If it's not enabled, 404:
+  else {
+    drupal_not_found();
+  }
+}
+
+/**
+ * Handles login using OAuth2 providers.
+ */
+function oauth2_login($info) {
+  //Require the libraries:
+  require_once 'Client.php';
+  require_once 'GrantType/IGrantType.php';
+  require_once 'GrantType/AuthorizationCode.php';
+  
+  //Prepare OAuth2 client:
+  $state = variable_get('oauth2_login_state');
+  $client_id = $info['client-id'];
+  $client_secret = $info['client-secret'];
+  $redirect_uri = $info['redirect-uri'];
+  $authorization_endpoint = $info['auth-endpoint'];
+  $token_endpoint = $info['token-endpoint'];
+  $fetch_url = $info['fetch-url'];
+  $scope = $info['scope'];
+  $parse_response = isset($info['parse_response']) ? $info['parse_response'] : 'oauth2_dummy_parse_response';
+  
+  $client = new OAuth2\Client($client_id, $client_secret);
+  
+  //If there's a custom function to configure the client, call it:
+  if(isset($info['configure_client'])) {
+    $info['configure_client']($client);
+  }
+  
+  //If the user has arrived at the page:
+  if(!isset($_GET['code'])) {
+    //Redirect user to the provider's authentication page:
+    $extra_parameters = array(
+      'scope' => $scope,
+      'state' => $state
+    );
+    $auth_url = $client->getAuthenticationUrl($authorization_endpoint, $redirect_uri, $extra_parameters);
+    header('Location: '.$auth_url);
+    die('Redirect');
+  }
+  //If the user is returning from authentication page:
+  else {
+    if(!isset($_GET['state']) || $_GET['state'] != $state) {
+      drupal_set_message(t('Cross Site Request Forgery attempt detected.'),'error');
+      drupal_goto('user/login');
+      return;
+    }
+    //If we don't have a token, ask the provider:
+    if(!isset($_SESSION['oauth2_login'][$info['id']]['token'])) {
+      $params = array(
+        'code' => $_GET['code'],
+        'client_id' => $client_id,
+        'client_secret' => $client_secret,
+        'redirect_uri' => $redirect_uri
+      );
+      
+      $response = $parse_response($client->getAccessToken($token_endpoint, 'authorization_code', $params), 'get_token');
+      
+      if(!isset($response['result']['access_token'])) {
+        drupal_set_message(t('Could not obtain access token.'),'error');
+        drupal_goto('user/login');
+        return;
+      }
+      
+      $_SESSION['oauth2_login'][$info['id']]['token'] = $response['result']['access_token'];
+    }
+  
+    //Sets the client's access token:
+    $client->setAccessToken($_SESSION['oauth2_login'][$info['id']]['token']);
+    
+    //Fetch user information from the provider:
+    $user_info = $parse_response($client->fetch($fetch_url), 'fetch');
+      
+    //If we have a valid response:
+    if($user_info['code'] == 200) {
+      //Extract information from the response:
+      $mail = $user_info['result']['email'];
+      $name = $user_info['result']['name'];
+  
+      //Try to find the user on the database:
+      $user = user_load_by_mail($mail);
+      
+      //Okay, we have a user, log in:
+      if($user) {
+        $login_form['uid'] = $user->uid;
+        user_login_submit(array(), $login_form);
+        drupal_goto('user');
+      }
+      //User not registered, redirect to the register page:
+      else {
+        $extra = array(
+          'prepopulate' => array(
+            'provider' => $info['id'],
+            'name' => $name,
+            'mail' => $mail,
+          ),
+        );
+        return drupal_get_form('user_register_form', $extra);
+      }
+    }
+    //Invalid response from provider:
+    else {
+      drupal_goto('user/register');
+    }
+  }
+}
+
+/**
+ * Handles the login using Yahoo.
+ */
+function yahoo_login($info) {
+  //Require the libraries:
+  require_once 'yahoo-sdk/OAuth.php';
+  require_once 'yahoo-sdk/YahooOAuthApplication.class.php';
+  
+  //Prepare client:
+  $consumer_key = $info['consumer-key'];
+  $consumer_secret = $info['consumer-secret'];
+  $domain = $info['domain'];
+  $app_id = $info['app-id'];
+  $callback_url = $info['callback-url'];
+  
+  $app = new YahooOAuthApplication($consumer_key, $consumer_secret, $app_id, $callback_url);
+  
+  //If the user has arrived at the page:
+  if(!isset($_REQUEST['oauth_verifier'])) {
+    //Asks the provider for a request token and store on the session:
+    $request_token = $app->getRequestToken($callback_url);
+    $_SESSION['oauth2_login']['yahoo']['token'] = $request_token->to_string();
+    
+    //Redirects the user:
+    $redirect_url = $app->getAuthorizationUrl($request_token);
+    drupal_session_commit();
+    header('Location: ' . $redirect_url);
+    die('Redirect');
+  }
+  //If the user is returning from the authorization page:
+  else {
+    //Exchanges the request token and the authorization token for an access token:
+    $access_token = $app->getAccessToken(YahooOAuthAccessToken::from_string($_SESSION['oauth2_login']['yahoo']['token']), $_REQUEST['oauth_verifier']);
+    $app->token = $access_token;
+    
+    //Fetches user info:
+    $profile = $app->getProfile();
+    
+    $name = $profile->nickname;
+    $mail = $profile->emails[0]->handle;
+    
+    //Try to find the user:
+    $user = user_load_by_mail($mail);
+    
+    //Okay, we have a user, log in:
+    if($user) {
+      $login_form['uid'] = $user->uid;
+      user_login_submit(array(), $login_form);
+      drupal_goto('user');
+    }
+    //User not registered, redirect to the register page:
+    else {
+      $extra = array(
+        'prepopulate' => array(
+          'provider' => 'yahoo',
+          'name' => $name,
+          'mail' => $mail,
+        ),
+      );
+      return drupal_get_form('user_register_form', $extra);
+    }
+  }
+}
+
+/**
+ * If there's nothing special to to with the response, this function will be used.
+ * It just returns the data unchanged.
+ */
+function oauth2_dummy_parse_response($response, $type) {
+  return $response;
+}
+
+/**
+ * Linkedin's configuration function.
+ */
+function oauth2_linkedin_configure_client($client) {
+  $client->setAccessTokenParamName('oauth2_access_token');
+}
+
+/**
+ * Parses the response sent by Facebook.
+ */
+function oauth2_facebook_parse_response($response, $type) {
+  if($type == 'get_token') {
+    $arr = array();
+    parse_str($response['result'],$arr);
+    $response['result'] = $arr;
+  }
+  return $response;
+}
+
+/**
+ * Parses the response sent by Linkedin.
+ */
+function oauth2_linkedin_parse_response($response, $type) {
+  if($type == 'fetch') {
+    $xml = simplexml_load_string($response['result']);
+    $response['result'] = array(
+      'name' => $xml->{'first-name'} . ' ' . $xml->{'last-name'},
+      'email' => (string)$xml->{'email-address'}
+    );
+  }
+  return $response;
+}
