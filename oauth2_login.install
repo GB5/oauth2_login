@@ -2,9 +2,49 @@
 
 function oauth2_login_install() {
   variable_set('oauth2_login_state', md5(rand()));
+  $providers_info = array (
+    'google' => array (
+      'enabled' => 0,
+      'redirect-uri' => 'http://sites.xpd.com.br/sandbox4/user/login/google',
+      'auth-endpoint' => 'https://accounts.google.com/o/oauth2/auth',
+      'token-endpoint' => 'https://accounts.google.com/o/oauth2/token',
+      'fetch-url' => 'https://www.googleapis.com/oauth2/v3/userinfo',
+      'scope' => 'email profile',
+    ),
+    'facebook' => array (
+      'enabled' => 0,
+      'redirect-uri' => 'http://sites.xpd.com.br/sandbox4/user/login/facebook',
+      'auth-endpoint' => 'https://www.facebook.com/dialog/oauth',
+      'token-endpoint' => 'https://graph.facebook.com/oauth/access_token',
+      'fetch-url' => 'https://graph.facebook.com/me',
+      'scope' => 'email',
+    ),
+    'linkedin' => array (
+      'enabled' => 0,
+      'redirect-uri' => 'http://sites.xpd.com.br/sandbox4/user/login/linkedin',
+      'auth-endpoint' => 'https://www.linkedin.com/uas/oauth2/authorization',
+      'token-endpoint' => 'https://www.linkedin.com/uas/oauth2/accessToken',
+      'fetch-url' => 'https://api.linkedin.com/v1/people/~/email-address',
+      'scope' => 'r_basicprofile r_emailaddress',
+    ),
+    /*
+     'yahoo' => array
+  (
+    'enabled' => 0,
+    'client-id' =>
+    'client-secret' =>
+    'redirect-uri' =>
+    'auth-endpoint' =>
+    'token-endpoint' =>
+    'fetch-url' =>
+    'scope' =>
+  )*/
+  );
+  variable_set('oauth2_providers_info', $providers_info);
 }
 
 function oauth2_login_uninstall() {
+  variable_del('oauth2_login_field_name');
   variable_del('oauth2_login_state');
   variable_del('oauth2_providers_info');
 }
