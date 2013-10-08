@@ -132,19 +132,21 @@ function field_info_fields_text() {
  */
 function oauth2_login_config($form, &$form_state) {
   //Get configuration information:
-  $providers_info = variable_get('oauth2_providers_info', array());
+  $providers_info = variable_get('oauth2_login_providers_info', array());
+  $field_name_settings = variable_get('oauth2_login_field_name', array('use_name' => FALSE, 'field_name' => '_none'));
 
-  //State field:
   $form['use_name'] = array(
     '#title' => 'Use name',
     '#description' => 'If you want to prepopulate the name in the registration form using the information from the provider.',
     '#type' => 'checkbox',
+    '#default_value' => $field_name_settings['use_name'] ? TRUE : FALSE,
   );
 
   $form['field_name'] = array(
     '#title' => 'Field name',
     '#type' => 'select',
     '#options' => field_info_fields_text(),
+    '#default_value' => $field_name_settings['field_name'],
     '#states' => array(
       'invisible' => array(
         ':input[name="use_name"]' => array(
@@ -154,6 +156,7 @@ function oauth2_login_config($form, &$form_state) {
     )
   );
 
+//   State field:
   $form['state'] = array(
     '#type' => 'textfield',
     '#title' => 'State',
@@ -173,7 +176,7 @@ function oauth2_login_config($form, &$form_state) {
     //Fieldset to contain the other fields:
     $form['providers'][$id] = array(
       '#type' => 'fieldset',
-      '#title' => $provider['name']
+      '#title' => $provider['name'],
     );
 
     //The enabled checkbox:
@@ -210,6 +213,46 @@ function oauth2_login_config($form, &$form_state) {
   return $form;
 }
 
+function oauth2_login_form_oauth2_login_config_alter(&$form, &$form_state) {
+  foreach(element_children($form['providers']) as $provider) {
+    $form['providers'][$provider]['redirect-uri']['#default_value'] = url('user/login/' . $provider, array('absolute' => TRUE));
+    $form['providers'][$provider]['redirect-uri']['#disabled'] = TRUE;
+
+//     $form['providers'][$provider]['auth-endpoint']['#default_value'] = 'https://graph.facebook.com/oauth/authorize';
+//     $form['providers'][$provider]['token-endpoint']['#default_value'] = 'https://graph.facebook.com/oauth/authorize';
+//     $form['providers'][$provider]['fetch-url']['#default_value'] = 'https://graph.facebook.com/oauth/authorize';
+//     $form['providers'][$provider]['fetch-url']['#default_value'] = 'https://graph.facebook.com/oauth/authorize';
+  }
+}
+
+function oauth2_login_config_validate($form, &$form_state) {
+  dsm($form_state);
+  $values = &$form_state['values'];
+  foreach($values['providers'] as $provider_name => $provider_info) {
+    if($provider_info['enabled']) {
+      if(!$provider_info['client-id']) {
+        form_set_error('providers][' . $provider_name . '][client-id', t('Client ID (@provider) is required.', array('@provider' => $provider_name)));
+      }
+      if(!$provider_info['client-secret']) {
+        form_set_error('providers][' . $provider_name . '][client-secret', t('Client Secret (@provider) is required.', array('@provider' => $provider_name)));
+      }
+      if(!$provider_info['auth-endpoint']) {
+        form_set_error('providers][' . $provider_name . '][auth-endpoint', t('Auth Endpoint (@provider) is required.', array('@provider' => $provider_name)));
+      }
+      if(!$provider_info['token-endpoint']) {
+        form_set_error('providers][' . $provider_name . '][token-endpoint', t('Token Endpoint (@provider) is required.', array('@provider' => $provider_name)));
+      }
+      if(!$provider_info['fetch-url']) {
+        form_set_error('providers][' . $provider_name . '][fetch-url', t('Fetch URL (@provider) is required.', array('@provider' => $provider_name)));
+      }
+      if(!$provider_info['scope']) {
+        form_set_error('providers][' . $provider_name . '][scope', t('Scope (@provider) is required.', array('@provider' => $provider_name)));
+      }
+    }
+  }
+}
+
+
 /**
  * Saves the configuration form and rebuilds the menu.
  */
@@ -217,7 +260,7 @@ function oauth2_login_config_submit($form, &$form_state) {
   $values = &$form_state['values'];
   variable_set('oauth2_login_field_name', array('use_name' => $values['use_name'], 'field_name' => $values['field_name']));
   variable_set('oauth2_login_state', $values['state']);
-  variable_set('oauth2_providers_info', $values['providers']);
+  variable_set('oauth2_login_providers_info', $values['providers']);
   drupal_set_message(t('OAuth2 providers saved!'));
   menu_rebuild();
 }
@@ -228,7 +271,7 @@ function oauth2_login_config_submit($form, &$form_state) {
 function oauth2_login_form_alter(&$form, &$form_state, $form_id) {
   //It's the login form, add the links to the menu:
   if($form_id == 'user_login_block' || $form_id == 'user_login') {
-    $providers_info = variable_get('oauth2_providers_info');
+    $providers_info = variable_get('oauth2_login_providers_info');
     $providers = get_oauth2_providers();
 
     foreach($providers_info as $id => $info) {
@@ -302,7 +345,7 @@ function user_register_form_set_session($form, $form_state) {
  * Handles user login using OAuth providers.
  */
 function oauth2_login_page($provider_id) {
-  $service_info = variable_get('oauth2_providers_info');
+  $service_info = variable_get('oauth2_login_providers_info');
 
   //If the service is enabled, call the function:
   if(isset($service_info[$provider_id]) && $service_info[$provider_id]['enabled']) {

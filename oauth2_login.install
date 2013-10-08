@@ -40,11 +40,11 @@ function oauth2_login_install() {
     'scope' =>
   )*/
   );
-  variable_set('oauth2_providers_info', $providers_info);
+  variable_set('oauth2_login_providers_info', $providers_info);
 }
 
 function oauth2_login_uninstall() {
   variable_del('oauth2_login_field_name');
   variable_del('oauth2_login_state');
-  variable_del('oauth2_providers_info');
+  variable_del('oauth2_login_providers_info');
 }

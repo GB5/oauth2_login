@@ -2,4 +2,4 @@ name = OAuth2.0 Login
 description = Login using OAuth2.0
 core = 7.x
 package = OAuth2 Login
-configure = sistema/oauth2-login/config
+configure = admin/oauth2-login/config
