@@ -21,9 +21,6 @@ function get_oauth2_providers() {
     'redirect-uri' => array(
       'name' => 'Redirect URI'
     ),
-    'client-id' => array(
-      'name' => 'Client ID'
-    ),
     'auth-endpoint' => array(
       'name' => 'Auth Endpoint'
     ),

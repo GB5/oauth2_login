@@ -1,0 +1,7 @@
+name = OAuth2 Services
+description = Provide a service to perform remote login via Drupal Services
+package = OAuth2 Login
+core = 7.x
+php = 5.x   
+files[] = oauth2_login_service.module    
+dependencies[] = services

@@ -1,0 +1,86 @@
+<?php
+/**
+ * Implemments a service in order to be possible to use this authentication
+ * method to login remotely, e.g. via a mobile app using Drupal Services
+ * as the "bridge".
+ */
+function oauth2_login_service_services_resources() {
+  return array(
+      'oauth2_services' => array(
+          // Actions refers to method called with POST
+          'actions' => array(
+              'fb_login' => array(
+                  'help' => 'Performs OAuth2 login via Facebook, returns session info',
+                  'callback' => '_services_test_resource_action_retrieve',
+                  'args' => array(
+                      array(
+                          'name' => 'Access Token',
+                          'source' => array('data' => 'access_token'),
+                          'type' => 'string',
+                          'description' => 'Info.',
+                          'optional' => FALSE,
+                      ),
+
+                  ),
+                  'access callback' => '_services_test_resource_access',
+                  'access arguments' => array('view'),
+                  'access arguments append' => TRUE,
+              ),
+          ),
+      ),
+  );
+}
+
+/**
+ * Action retrieve callback.
+ */
+function _services_test_resource_action_retrieve($access_token) {
+  //$info = json_decode($info);
+  require_once 'Client.php';
+  require_once 'GrantType/IGrantType.php';
+  require_once 'GrantType/AuthorizationCode.php';
+  $client = new OAuth2\Client('', '');
+  $client->setAccessToken($access_token);
+
+  $user_info = oauth2_facebook_parse_response($client->fetch('https://graph.facebook.com/me'), 'fetch');
+
+  if($user_info['code'] == 200) {
+    //Extract information from the response:
+    $mail = $user_info['result']['email'];
+    $name = $user_info['result']['name'];
+
+    //Try to find the user on the database:
+    $user = user_load_by_mail($mail);
+
+    //Okay, we have a user, log in:
+    if($user) {
+      if ($user->uid) {
+
+        $login_form['uid'] = $user->uid;
+        user_login(array(), $login_form);
+
+        $user_obj = user_load($user->uid);
+        $return = new stdClass();
+        $return->sessid = session_id();
+        $return->session_name = session_name();
+        $return->user = $user;
+      }
+    }
+    //User not registered, redirect to the register page:
+    /*else {
+      $extra = array(
+          'prepopulate' => array(
+              'provider' => $info['id'],
+              'name' => $name,
+              'mail' => $mail,
+          ),
+      );
+      return drupal_get_form('user_register_form', $extra);*/
+    }
+
+  return json_encode($return);
+}
+
+function _services_test_resource_access($op) {
+  return TRUE;
+ }
