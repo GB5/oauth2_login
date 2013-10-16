@@ -44,41 +44,39 @@ function _services_test_resource_action_retrieve($access_token) {
 
   $user_info = oauth2_facebook_parse_response($client->fetch('https://graph.facebook.com/me'), 'fetch');
 
+  //return $user_info;
   if($user_info['code'] == 200) {
     //Extract information from the response:
     $mail = $user_info['result']['email'];
     $name = $user_info['result']['name'];
 
     //Try to find the user on the database:
-    $user = user_load_by_mail($mail);
+    $user_t = user_load_by_mail($mail);
 
-    //Okay, we have a user, log in:
-    if($user) {
-      if ($user->uid) {
-
-        $login_form['uid'] = $user->uid;
-        user_login(array(), $login_form);
-
-        $user_obj = user_load($user->uid);
-        $return = new stdClass();
-        $return->sessid = session_id();
-        $return->session_name = session_name();
-        $return->user = $user;
-      }
-    }
-    //User not registered, redirect to the register page:
-    /*else {
-      $extra = array(
-          'prepopulate' => array(
-              'provider' => $info['id'],
-              'name' => $name,
-              'mail' => $mail,
-          ),
+    //User not registered, register:
+    if(!$user_t) {
+      $new_user = array(
+          'name' => $mail,
+          'mail' => $mail,
+          'field_nome' => array(LANGUAGE_NONE => array(array('value' => $name))),
+          'status' => 1,
+          'access' => REQUEST_TIME,
       );
-      return drupal_get_form('user_register_form', $extra);*/
+      // $account returns user object
+      $user_t = user_save(null, $new_user);
     }
 
-  return json_encode($return);
+    $login_form['uid'] = $user_t->uid;
+    user_login_submit(array(), $login_form);
+
+    $return = new stdClass();
+    $return->sessid = session_id();
+    $return->session_name = session_name();
+    $return->user = $user_t;
+
+  }
+
+  return $return;
 }
 
 function _services_test_resource_access($op) {
