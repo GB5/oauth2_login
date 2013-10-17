@@ -5,3 +5,4 @@ core = 7.x
 php = 5.x   
 files[] = oauth2_login_service.module    
 dependencies[] = services
+dependencies[] = oauth2_login

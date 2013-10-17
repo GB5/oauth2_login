@@ -22,7 +22,7 @@ function oauth2_login_service_services_resources() {
                       ),
 
                   ),
-                  'access callback' => '_services_test_resource_access',
+                  'access callback' => '_services_oauth2_resource_access',
                   'access arguments' => array('view'),
                   'access arguments append' => TRUE,
               ),
@@ -75,10 +75,9 @@ function _services_test_resource_action_retrieve($access_token) {
     $return->user = $user_t;
 
   }
-
   return $return;
 }
 
-function _services_test_resource_access($op) {
+function _services_oauth2_resource_access() {
   return TRUE;
  }
